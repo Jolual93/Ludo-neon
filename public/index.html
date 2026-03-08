@@ -202,11 +202,13 @@ socket.on('game_start', ({config, yourColor}) => {
 socket.on('opponent_rolled', ({color, result}) => {
     if(color !== myColor){
         currentDice = result;
+        isAnimating = true;
         document.getElementById('btn-roll').innerText = result;
-        setTimeout(()=>evaluateMoves(result), 400);
+        // fromServer=true so evaluateMoves won't ask for input, just waits for opponent_moved
+        setTimeout(()=>evaluateMoves(result, true), 400);
     }
 });
-socket.on('opponent_moved', ({tokenIndex, steps, color}) => { if(color!==myColor) executeMovement(tokenIndex, steps); });
+socket.on('opponent_moved', ({tokenIndex, steps, color}) => { if(color!==myColor) executeMovement(tokenIndex, steps, true); });
 socket.on('opponent_skill', ({color}) => { if(color!==myColor&&players[color]){const p=players[color];if(p.uses>0){p.uses--;p.skillActive=true;}} });
 socket.on('player_disconnected', () => { logMessage('⚠️ Un jugador se desconectó'); });
 
@@ -309,11 +311,23 @@ function getValidMoves(player,dice,playerKey){let moves=[],steps=dice;if(player.
 
 function startTurn(){ASMR.init();if(!gameActive||isAnimating||waitingForSelection)return;isAnimating=true;updateUI();const p=players[activePlayers[turnIndex]];const dEl=document.getElementById('btn-roll');let rolls=0;const iv=setInterval(()=>{dEl.innerText=Math.floor(Math.random()*6)+1;if(rolls%2===0)ASMR.play('roll');rolls++;if(rolls>10){clearInterval(iv);let fd=Math.floor(Math.random()*6)+1;if(p.charId==='dog'&&p.skillActive){fd=6;p.skillActive=false;logMessage('¡El Perro asegura un 6!');}dEl.innerText=fd;currentDice=fd;emitRoll(fd);setTimeout(()=>evaluateMoves(fd),200);}},40);}
 
-function evaluateMoves(dice){const p=players[activePlayers[turnIndex]];const valid=getValidMoves(p,dice,activePlayers[turnIndex]);if(valid.length===0){logMessage(`Sacaste ${dice}. Sin movimientos.`);p.skillActive=false;setTimeout(()=>finishTurn(dice,false),1500);}else{let steps=dice;if(p.charId==='cat'&&p.skillActive)steps+=2;if(p.charId==='frog'&&p.skillActive)steps*=2;p.skillActive=false;if(valid.length===1&&!p.isIA&&!autoMode)executeMovement(valid[0],steps);else if(p.isIA||autoMode)setTimeout(()=>aiChooseMove(valid,steps),600);else{waitingForSelection=true;logMessage('Toca una ficha iluminada.');renderTokens(valid);updateUI();}}}
+function evaluateMoves(dice, fromServer=false){
+    const p=players[activePlayers[turnIndex]];
+    const valid=getValidMoves(p,dice,activePlayers[turnIndex]);
+    // If this came from the server, the opponent_moved event will handle the actual move.
+    // We just need to handle the "no moves" case to advance the turn.
+    if(fromServer){
+        if(valid.length===0){p.skillActive=false;setTimeout(()=>finishTurn(dice,false),1500);}
+        else{isAnimating=false;} // opponent_moved will re-trigger executeMovement
+        return;
+    }
+    if(valid.length===0){logMessage(`Sacaste ${dice}. Sin movimientos.`);p.skillActive=false;setTimeout(()=>finishTurn(dice,false),1500);}
+    else{let steps=dice;if(p.charId==='cat'&&p.skillActive)steps+=2;if(p.charId==='frog'&&p.skillActive)steps*=2;p.skillActive=false;if(valid.length===1&&!p.isIA&&!autoMode)executeMovement(valid[0],steps);else if(p.isIA||autoMode)setTimeout(()=>aiChooseMove(valid,steps),600);else{waitingForSelection=true;logMessage('Toca una ficha iluminada.');renderTokens(valid);updateUI();}}
+}
 
 function selectTokenToMove(idx){if(!waitingForSelection)return;waitingForSelection=false;renderTokens();const p=players[activePlayers[turnIndex]];let steps=currentDice;if(p.skillActive){if(p.charId==='cat')steps+=2;if(p.charId==='frog')steps*=2;p.skillActive=false;}executeMovement(idx,steps);}
 
-function executeMovement(tokenIndex,steps){isAnimating=true;emitMove(tokenIndex,steps);const col=activePlayers[turnIndex];const p=players[col];if(p.tokens[tokenIndex]===-1){p.tokens[tokenIndex]=0;ASMR.play('hop');renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),300);}else{let done=0;const iv=setInterval(()=>{if(done<steps){p.tokens[tokenIndex]++;ASMR.play('hop');renderTokens();const el=document.getElementById(`${col}-token-${tokenIndex}`);if(el)el.classList.add('hopping');done++;}else{clearInterval(iv);renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),200);}},150);}}
+function executeMovement(tokenIndex,steps,fromServer=false){isAnimating=true;if(!fromServer)emitMove(tokenIndex,steps);const col=activePlayers[turnIndex];const p=players[col];if(p.tokens[tokenIndex]===-1){p.tokens[tokenIndex]=0;ASMR.play('hop');renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),300);}else{let done=0;const iv=setInterval(()=>{if(done<steps){p.tokens[tokenIndex]++;ASMR.play('hop');renderTokens();const el=document.getElementById(`${col}-token-${tokenIndex}`);if(el)el.classList.add('hopping');done++;}else{clearInterval(iv);renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),200);}},150);}}
 
 function checkCollisionsAndFinish(dice,tokenIndex){const col=activePlayers[turnIndex];const p=players[col];const myPos=p.tokens[tokenIndex];let scored=false;if(myPos===56){scored=true;if(p.tokens.every(x=>x===56)){triggerSuperEpicGoal(p.icon,col);p.hasWon=true;rankings.push(col);logMessage(`🏆 ¡${p.name.toUpperCase()} LLEGÓ A LA META!`);const medal=rankings.length===1?'🥇':rankings.length===2?'🥈':'🥉';const av=document.getElementById(`base-avatar-${col}`);if(av)av.innerText=p.icon+' '+medal;}else{triggerEpicGoal(p.icon,col);logMessage(`🎉 ¡${p.name} metió una ficha!`);}}else if(myPos>=0&&myPos<=50){const gi=(p.startOffset+myPos)%52;if(!safeSpots.includes(gi)){const mc=p.path[myPos];activePlayers.forEach(ec=>{if(ec!==col){const en=players[ec];en.tokens.forEach((ep,ei)=>{if(ep>=0&&ep<=50&&(en.startOffset+ep)%52===gi){const cell=document.getElementById(`cell-${mc[0]}-${mc[1]}`);if(cell){cell.classList.add('clash-anim');setTimeout(()=>cell.classList.remove('clash-anim'),300);}if(en.shielded){en.shielded=false;p.tokens[tokenIndex]=-1;p.captured++;ASMR.play(en.charId);logMessage(`🛡️ ¡${en.name} usó escudo!`);}else{en.tokens[ei]=-1;en.captured++;p.captures++;ASMR.play(p.charId);logMessage(`💥 ¡${p.name} captura a ${en.name}!`);}renderTokens();}});}}); }}
 const rem=activePlayers.filter(c=>!players[c].hasWon);if(rem.length<=1&&activePlayers.length>1){if(rem.length===1){players[rem[0]].hasWon=true;rankings.push(rem[0]);}gameActive=false;isAnimating=false;updateUI();logMessage('🏆 FIN DEL JUEGO 🏆');setTimeout(showRankingModal,1500);return;}finishTurn(dice,scored);}
