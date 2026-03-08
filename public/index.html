@@ -1,1 +1,329 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ludo Neón Party</title>
+    <style>
+        :root {
+            --bg-dark: #090a0f; --board-bg: #12141d;
+            --c-red: #ff0055; --c-green: #00ff55; --c-blue: #00e5ff; --c-yellow: #ffee00;
+            --border-glow: rgba(255,255,255,0.1); --text-neon: #fff;
+        }
+        html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background-color:var(--bg-dark);color:var(--text-neon);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;display:flex;flex-direction:column;user-select:none;}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(5px);}
+        .setup-card{background:#151821;border:2px solid var(--c-blue);border-radius:15px;padding:20px;width:90%;max-width:400px;box-shadow:0 0 30px rgba(0,229,255,0.3);display:flex;flex-direction:column;gap:12px;}
+        .setup-card h2{margin:0;text-align:center;color:var(--c-blue);text-transform:uppercase;letter-spacing:2px;}
+        .setup-row{display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;border-left:4px solid #fff;}
+        .setup-row.row-red{border-left-color:var(--c-red);}.setup-row.row-green{border-left-color:var(--c-green);}.setup-row.row-yellow{border-left-color:var(--c-yellow);}.setup-row.row-blue{border-left-color:var(--c-blue);}
+        .setup-row select{flex:1;background:#090a0f;color:#fff;border:1px solid rgba(255,255,255,0.2);padding:5px;border-radius:4px;font-size:13px;outline:none;}
+        .btn-start{background:var(--c-blue);color:#000;border:none;padding:12px;border-radius:8px;font-weight:bold;font-size:16px;cursor:pointer;text-transform:uppercase;box-shadow:0 0 15px var(--c-blue);transition:0.2s;}
+        .btn-start:hover{transform:scale(1.05);}
+        .online-info{background:rgba(0,229,255,0.08);border:1px solid var(--c-blue);border-radius:10px;padding:12px;text-align:center;}
+        .room-code{font-size:26px;font-weight:bold;color:var(--c-blue);letter-spacing:6px;margin:6px 0;}
+        .copy-btn{background:none;border:1px solid var(--c-blue);color:var(--c-blue);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;margin-top:4px;}
+        .players-list{margin-top:8px;font-size:12px;color:#aaa;min-height:18px;}
+        .guest-waiting{text-align:center;padding:20px;color:#aaa;font-size:14px;}
+        .shake{animation:shake 0.5s cubic-bezier(.36,.07,.19,.97) both;}
+        @keyframes shake{10%,90%{transform:translate3d(-2px,0,0);}20%,80%{transform:translate3d(4px,0,0);}30%,50%,70%{transform:translate3d(-6px,0,0);}40%,60%{transform:translate3d(6px,0,0);}}
+        .ranking-card{background:#151821;border:2px solid var(--c-yellow);border-radius:15px;padding:20px;width:90%;max-width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 0 40px rgba(255,238,0,0.4);display:flex;flex-direction:column;gap:15px;text-align:center;}
+        .rank-item{display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;font-weight:bold;font-size:18px;}
+        .top-bar{flex-shrink:0;display:flex;justify-content:space-between;align-items:center;padding:10px 15px;background:rgba(0,0,0,0.5);border-bottom:1px solid var(--border-glow);z-index:10;}
+        .title{margin:0;font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase;text-shadow:0 0 10px #fff;}
+        .main-area{flex-grow:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:10px;}
+        .board{height:100%;max-height:100vw;aspect-ratio:1;background-color:var(--board-bg);border-radius:10px;position:relative;display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr);box-shadow:0 0 30px rgba(0,0,0,0.8),inset 0 0 10px var(--border-glow);border:2px solid #222;}
+        .cell{border:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;position:relative;}
+        .base-hidden{border:none!important;}
+        .path-red{background:rgba(255,0,85,0.15);}.path-green{background:rgba(0,255,85,0.15);}.path-blue{background:rgba(0,229,255,0.15);}.path-yellow{background:rgba(255,238,0,0.15);}
+        .safe-spot::before{content:'⭐';position:absolute;font-size:20px;opacity:0.2;color:#fff;z-index:1;}
+        .base-container{position:absolute;width:40%;height:40%;display:flex;align-items:center;justify-content:center;border-radius:8px;}
+        .base-tl{top:0;left:0;background:var(--c-red);border-bottom-right-radius:0;}.base-tr{top:0;right:0;background:var(--c-green);border-bottom-left-radius:0;}.base-bl{bottom:0;left:0;background:var(--c-blue);border-top-right-radius:0;}.base-br{bottom:0;right:0;background:var(--c-yellow);border-top-left-radius:0;}
+        .base-active{box-shadow:0 0 15px currentColor;opacity:1;}.base-inactive{opacity:0.15;box-shadow:none!important;filter:grayscale(80%);}
+        .base-inner{width:70%;height:70%;background:#111;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;place-items:center;padding:5%;box-shadow:inset 0 0 10px rgba(0,0,0,0.8);position:relative;}
+        .base-pocket{width:50%;height:50%;border-radius:50%;border:2px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;z-index:2;}
+        .base-avatar{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:35px;opacity:0.4;pointer-events:none;z-index:1;}
+        .center-home{position:absolute;top:40%;left:40%;width:20%;height:20%;background:#111;border:2px solid #333;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;padding:2px;z-index:5;box-sizing:border-box;}
+        .home-slot{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;place-items:center;border-radius:4px;padding:1px;gap:1px;}
+        .home-red{background:rgba(255,0,85,0.2);border:1px solid rgba(255,0,85,0.5);}.home-green{background:rgba(0,255,85,0.2);border:1px solid rgba(0,255,85,0.5);}.home-blue{background:rgba(0,229,255,0.2);border:1px solid rgba(0,229,255,0.5);}.home-yellow{background:rgba(255,238,0,0.2);border:1px solid rgba(255,238,0,0.5);}
+        .token{width:65%;height:65%;border-radius:50%;z-index:10;transition:transform 0.2s;position:absolute;display:flex;align-items:center;justify-content:center;font-size:14px;text-shadow:0 0 4px #000;}
+        .base-pocket .token{position:relative;width:85%;height:85%;font-size:16px;transform:none!important;margin:0!important;}
+        .token-red{background:var(--c-red);box-shadow:0 0 10px var(--c-red),inset 0 0 5px rgba(255,255,255,0.6);border:2px solid #fff;}
+        .token-green{background:var(--c-green);box-shadow:0 0 10px var(--c-green),inset 0 0 5px rgba(255,255,255,0.6);border:2px solid #fff;}
+        .token-blue{background:var(--c-blue);box-shadow:0 0 10px var(--c-blue),inset 0 0 5px rgba(255,255,255,0.6);border:2px solid #fff;}
+        .token-yellow{background:var(--c-yellow);box-shadow:0 0 10px var(--c-yellow),inset 0 0 5px rgba(255,255,255,0.6);border:2px solid #fff;}
+        .shielded::after{content:'';position:absolute;top:-4px;left:-4px;right:-4px;bottom:-4px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px #fff;}
+        .selectable{cursor:pointer;animation:pulse-select 0.8s infinite alternate;z-index:20;transform:scale(1.3)!important;}
+        @keyframes pulse-select{0%{box-shadow:0 0 10px #fff,0 0 20px #fff;}100%{box-shadow:0 0 20px #fff,0 0 40px #fff;}}
+        .hopping{animation:hop 0.15s cubic-bezier(0.25,1,0.5,1);z-index:50;}
+        @keyframes hop{0%{transform:translateY(0) scale(1);}50%{transform:translateY(-18px) scale(1.3);}100%{transform:translateY(0) scale(1);}}
+        .clash-anim{background-color:rgba(255,255,255,0.8);transition:0.1s;}
+        .epic-glow{animation:super-pulse 1s ease-out;}
+        @keyframes super-pulse{0%,100%{box-shadow:none;background:transparent;}50%{box-shadow:0 0 60px #fff,inset 0 0 30px #fff;background:rgba(255,255,255,0.5);}}
+        .confetti{position:fixed;font-size:35px;pointer-events:none;z-index:100;animation:explode 1s ease-out forwards;}
+        @keyframes explode{0%{transform:translate(0,0) scale(0.5);opacity:1;}100%{transform:translate(var(--tx),var(--ty)) scale(1.5) rotate(720deg);opacity:0;}}
+        .bottom-bar{flex-shrink:0;background:#151821;border-top:3px solid #333;transition:border-color 0.3s;padding:10px 15px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 -5px 20px rgba(0,0,0,0.5);gap:10px;}
+        .player-info{display:flex;flex-direction:column;gap:5px;align-items:center;width:70px;}
+        .avatar{width:45px;height:45px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;border:2px solid #000;transition:0.3s;}
+        .player-name{font-size:10px;font-weight:bold;text-align:center;color:#aaa;text-transform:uppercase;}
+        .dice-zone{display:flex;flex-direction:column;align-items:center;flex-grow:1;}
+        .dice-btn{background:#222;border:2px solid #444;color:#fff;width:65px;height:65px;border-radius:12px;font-size:35px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:inset 0 0 10px #000;transition:0.3s;}
+        .dice-btn:hover:not(:disabled){transform:scale(1.05);}
+        .dice-btn:disabled{opacity:0.5;cursor:not-allowed;}
+        .dice-active{animation:pulse-dice 1s infinite alternate;}
+        @keyframes pulse-dice{0%{transform:scale(1);}100%{transform:scale(1.05);}}
+        .status-text{font-size:12px;margin-top:5px;color:#aaa;text-align:center;height:14px;font-weight:bold;}
+        .skills-zone{display:flex;flex-direction:column;gap:5px;width:80px;align-items:center;}
+        .skill-btn{background:#222;border:1px solid #444;color:#fff;width:100%;height:35px;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;transition:0.3s;}
+        .skill-btn:hover:not(:disabled){filter:brightness(1.2);}
+        .skill-btn:disabled{opacity:0.3;}
+        .skill-active{border-color:#fff!important;box-shadow:0 0 10px #fff!important;}
+        .uses-text{font-size:9px;color:#888;}
+        .auto-box{display:flex;align-items:center;justify-content:center;}
+        .auto-box input{margin:0 5px 0 0;}
+        .auto-box label{font-size:10px;color:#aaa;}
+    </style>
+</head>
+<body>
+<script src="/socket.io/socket.io.js"></script>
+
+<div id="setup-modal" class="modal-overlay">
+    <div class="setup-card">
+        <h2>Ludo Neón Party</h2>
+        <div class="online-info">
+            <div style="font-size:11px;color:#aaa;">Código de sala — comparte con tus amigos:</div>
+            <div class="room-code" id="display-room-code">...</div>
+            <button class="copy-btn" onclick="copyRoomLink()">📋 Copiar enlace</button>
+            <div class="players-list" id="online-players-list">Conectando...</div>
+        </div>
+        <div id="host-config" style="display:none;">
+            <div style="font-size:11px;color:var(--c-blue);text-align:center;margin-bottom:8px;">⭐ Eres el <b>anfitrión</b> — configura la partida para todos</div>
+            <div class="setup-row row-red">
+                <span style="font-size:20px;">🔴</span>
+                <select id="st-red"><option value="human">Humano</option><option value="ia">IA</option><option value="off">Desactivado</option></select>
+                <select id="ch-red"><option value="cat">🐱 Gato (+2)</option><option value="frog">🐸 Rana (x2)</option><option value="dog">🐶 Perro (Dado 6)</option><option value="sq">🐿️ Ardilla (Escudo)</option></select>
+            </div>
+            <div class="setup-row row-green" style="margin-top:8px;">
+                <span style="font-size:20px;">🟢</span>
+                <select id="st-green"><option value="ia">IA</option><option value="human">Humano</option><option value="off">Desactivado</option></select>
+                <select id="ch-green"><option value="frog">🐸 Rana (x2)</option><option value="cat">🐱 Gato (+2)</option><option value="dog">🐶 Perro (Dado 6)</option><option value="sq">🐿️ Ardilla (Escudo)</option></select>
+            </div>
+            <div class="setup-row row-yellow" style="margin-top:8px;">
+                <span style="font-size:20px;">🟡</span>
+                <select id="st-yellow"><option value="off">Desactivado</option><option value="human">Humano</option><option value="ia">IA</option></select>
+                <select id="ch-yellow"><option value="sq">🐿️ Ardilla (Escudo)</option><option value="cat">🐱 Gato (+2)</option><option value="frog">🐸 Rana (x2)</option><option value="dog">🐶 Perro (Dado 6)</option></select>
+            </div>
+            <div class="setup-row row-blue" style="margin-top:8px;">
+                <span style="font-size:20px;">🔵</span>
+                <select id="st-blue"><option value="off">Desactivado</option><option value="human">Humano</option><option value="ia">IA</option></select>
+                <select id="ch-blue"><option value="dog">🐶 Perro (Dado 6)</option><option value="cat">🐱 Gato (+2)</option><option value="frog">🐸 Rana (x2)</option><option value="sq">🐿️ Ardilla (Escudo)</option></select>
+            </div>
+            <button class="btn-start" onclick="hostStartGame()" style="margin-top:12px;width:100%;">🚀 Iniciar Partida para Todos</button>
+        </div>
+        <div id="guest-waiting" style="display:none;" class="guest-waiting">
+            <div style="font-size:40px;margin-bottom:10px;">⏳</div>
+            <div>Esperando que el anfitrión inicie la partida...</div>
+            <div style="font-size:11px;color:#555;margin-top:8px;">La partida empezará automáticamente</div>
+        </div>
+    </div>
+</div>
+
+<div id="ranking-modal" class="modal-overlay" style="display:none;">
+    <div class="ranking-card">
+        <h2 style="color:var(--c-yellow);margin:0;">🏆 Ranking Final 🏆</h2>
+        <div id="ranking-list" style="display:flex;flex-direction:column;gap:10px;margin-top:10px;"></div>
+        <div id="insights-list" style="display:flex;flex-direction:column;gap:8px;margin-top:15px;font-size:13px;text-align:left;background:rgba(0,0,0,0.5);padding:15px;border-radius:8px;border:1px solid #333;"></div>
+        <button class="btn-start" style="background:var(--c-yellow);" onclick="location.reload()">Jugar de Nuevo</button>
+    </div>
+</div>
+
+<div class="top-bar">
+    <h1 class="title">Ludo Neón Party</h1>
+    <div class="auto-box"><input type="checkbox" id="auto-mode" onchange="toggleAutoMode()"><label for="auto-mode">AUTO</label></div>
+    <button onclick="location.reload()" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer;">⚙️</button>
+</div>
+
+<div class="main-area">
+    <div id="board" class="board">
+        <div class="base-container base-tl" id="base-bg-red" style="color:var(--c-red);"><div class="base-inner"><div class="base-pocket" id="pocket-red-0"></div><div class="base-pocket" id="pocket-red-1"></div><div class="base-pocket" id="pocket-red-2"></div><div class="base-pocket" id="pocket-red-3"></div><div class="base-avatar" id="base-avatar-red"></div></div></div>
+        <div class="base-container base-tr" id="base-bg-green" style="color:var(--c-green);"><div class="base-inner"><div class="base-pocket" id="pocket-green-0"></div><div class="base-pocket" id="pocket-green-1"></div><div class="base-pocket" id="pocket-green-2"></div><div class="base-pocket" id="pocket-green-3"></div><div class="base-avatar" id="base-avatar-green"></div></div></div>
+        <div class="base-container base-bl" id="base-bg-blue" style="color:var(--c-blue);"><div class="base-inner"><div class="base-pocket" id="pocket-blue-0"></div><div class="base-pocket" id="pocket-blue-1"></div><div class="base-pocket" id="pocket-blue-2"></div><div class="base-pocket" id="pocket-blue-3"></div><div class="base-avatar" id="base-avatar-blue"></div></div></div>
+        <div class="base-container base-br" id="base-bg-yellow" style="color:var(--c-yellow);"><div class="base-inner"><div class="base-pocket" id="pocket-yellow-0"></div><div class="base-pocket" id="pocket-yellow-1"></div><div class="base-pocket" id="pocket-yellow-2"></div><div class="base-pocket" id="pocket-yellow-3"></div><div class="base-avatar" id="base-avatar-yellow"></div></div></div>
+        <div class="center-home" id="center-home"><div class="home-slot home-red" id="home-red"></div><div class="home-slot home-green" id="home-green"></div><div class="home-slot home-blue" id="home-blue"></div><div class="home-slot home-yellow" id="home-yellow"></div></div>
+    </div>
+</div>
+
+<div class="bottom-bar" id="bottom-bar">
+    <div class="player-info"><div class="avatar" id="my-avatar">🎲</div><div class="player-name" id="my-name">Jugador</div></div>
+    <div class="dice-zone"><button class="dice-btn" id="btn-roll" onclick="startTurn()" disabled>🎲</button><div class="status-text" id="log-text">Esperando...</div></div>
+    <div class="skills-zone"><button class="skill-btn" id="btn-skill" onclick="activateSkill()" disabled>Habilidad</button><div class="uses-text" id="skill-uses">Usos: 2</div></div>
+</div>
+
+<script>
+const socket = io();
+const urlParams = new URLSearchParams(window.location.search);
+let myRoomId = urlParams.get('sala') || Math.random().toString(36).substr(2,6).toUpperCase();
+if (!urlParams.get('sala')) window.history.replaceState({},'',`?sala=${myRoomId}`);
+let amIHost = false, myColor = null;
+document.getElementById('display-room-code').innerText = myRoomId;
+
+function copyRoomLink(){navigator.clipboard.writeText(window.location.href);logMessage('¡Enlace copiado!');}
+
+socket.on('connect', () => { socket.emit('join_room', {roomId: myRoomId}); });
+
+socket.on('room_joined', ({isHost, playerCount}) => {
+    amIHost = isHost;
+    document.getElementById('host-config').style.display = isHost ? 'block' : 'none';
+    document.getElementById('guest-waiting').style.display = isHost ? 'none' : 'block';
+    updatePlayersList(playerCount);
+});
+
+socket.on('room_update', ({playerCount}) => { updatePlayersList(playerCount); });
+function updatePlayersList(n){ document.getElementById('online-players-list').innerText = `👥 ${n} jugador${n!==1?'es':''} en la sala`; }
+
+function hostStartGame(){
+    if(!amIHost) return;
+    const config = {
+        red:   {status:document.getElementById('st-red').value,   char:document.getElementById('ch-red').value},
+        green: {status:document.getElementById('st-green').value, char:document.getElementById('ch-green').value},
+        yellow:{status:document.getElementById('st-yellow').value,char:document.getElementById('ch-yellow').value},
+        blue:  {status:document.getElementById('st-blue').value,  char:document.getElementById('ch-blue').value}
+    };
+    const active = Object.values(config).filter(v=>v.status!=='off');
+    if(active.length < 2){alert('¡Necesitas al menos 2 jugadores!');return;}
+    socket.emit('host_start', {roomId:myRoomId, config});
+}
+
+socket.on('game_start', ({config, yourColor}) => {
+    myColor = yourColor;
+    document.getElementById('setup-modal').style.display = 'none';
+    applyConfig(config);
+});
+
+socket.on('opponent_rolled', ({color, result}) => {
+    if(color !== myColor){
+        currentDice = result;
+        document.getElementById('btn-roll').innerText = result;
+        setTimeout(()=>evaluateMoves(result), 400);
+    }
+});
+socket.on('opponent_moved', ({tokenIndex, steps, color}) => { if(color!==myColor) executeMovement(tokenIndex, steps); });
+socket.on('opponent_skill', ({color}) => { if(color!==myColor&&players[color]){const p=players[color];if(p.uses>0){p.uses--;p.skillActive=true;}} });
+socket.on('player_disconnected', () => { logMessage('⚠️ Un jugador se desconectó'); });
+
+function emitRoll(r){ socket.emit('roll_dice',{roomId:myRoomId,result:r}); }
+function emitMove(i,s){ socket.emit('move_token',{roomId:myRoomId,tokenIndex:i,steps:s,color:myColor}); }
+function emitSkill(c){ socket.emit('use_skill',{roomId:myRoomId,color:c}); }
+
+// AUDIO
+const ASMR={ctx:null,init(){if(!this.ctx)this.ctx=new(window.AudioContext||window.webkitAudioContext)();if(this.ctx.state==='suspended')this.ctx.resume();},play(type){if(!this.ctx)return;const t=this.ctx.currentTime;const mk=(f1,f2,dur,gain,wave)=>{const o=this.ctx.createOscillator(),g=this.ctx.createGain();o.connect(g);g.connect(this.ctx.destination);o.type=wave||'sine';o.frequency.setValueAtTime(f1,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);g.gain.setValueAtTime(gain||0.05,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.start(t);o.stop(t+dur);};if(type==='roll')mk(200+Math.random()*100,50,0.03,0.02,'square');else if(type==='hop')mk(400,600,0.05);else if(type==='skill')mk(800,1200,0.2,0.05,'triangle');else if(type==='epic'){[400,500,600,800].forEach((f,i)=>setTimeout(()=>mk(f,null,0.5,0.05,'triangle'),i*100));}else if(type==='super-epic'){[[440,0],[554,150],[659,300],[880,450],[1108,800]].forEach(([f,d])=>setTimeout(()=>mk(f,null,0.4,0.05,'square'),d));}else if(type==='cat')mk(500,400,0.5);else if(type==='frog'){mk(80,null,0.15,0.08,'square');setTimeout(()=>mk(80,null,0.15,0.08,'square'),200);}else if(type==='dog')mk(300,50,0.15,0.08,'sawtooth');else if(type==='sq')mk(2000,1000,0.1,0.05,'triangle');}};
+
+// DATOS
+const CHARS={cat:{icon:'🐱',name:'Gato',skillText:'⚡ +2 Pasos'},frog:{icon:'🐸',name:'Rana',skillText:'🚀 Salto x2'},dog:{icon:'🐶',name:'Perro',skillText:'🎲 Dado 6'},sq:{icon:'🐿️',name:'Ardilla',skillText:'🛡️ Escudo'}};
+const COLORS={red:{css:'token-red',start:1,hex:'var(--c-red)'},green:{css:'token-green',start:14,hex:'var(--c-green)'},yellow:{css:'token-yellow',start:27,hex:'var(--c-yellow)'},blue:{css:'token-blue',start:40,hex:'var(--c-blue)'}};
+const HOME_PATHS={red:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],green:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],yellow:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],blue:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]]};
+const track=[[6,0],[6,1],[6,2],[6,3],[6,4],[6,5],[5,6],[4,6],[3,6],[2,6],[1,6],[0,6],[0,7],[0,8],[1,8],[2,8],[3,8],[4,8],[5,8],[6,9],[6,10],[6,11],[6,12],[6,13],[6,14],[7,14],[8,14],[8,13],[8,12],[8,11],[8,10],[8,9],[9,8],[10,8],[11,8],[12,8],[13,8],[14,8],[14,7],[14,6],[13,6],[12,6],[11,6],[10,6],[9,6],[8,5],[8,4],[8,3],[8,2],[8,1],[8,0],[7,0]];
+const safeSpots=[1,9,14,22,27,35,40,48];
+let activePlayers=[],players={},turnIndex=0,gameActive=false,isAnimating=false,waitingForSelection=false,currentDice=0,autoMode=false,rankings=[];
+
+function getPath(start,home){let p=[];for(let i=0;i<51;i++)p.push(track[(start+i)%52]);return[...p,...home];}
+function logMessage(msg){document.getElementById('log-text').innerHTML=msg;}
+
+function applyConfig(config){
+    ASMR.init();activePlayers=[];players={};
+    ['red','green','yellow','blue'].forEach(col=>{
+        const{status,char:charId}=config[col];
+        const baseEl=document.getElementById(`base-bg-${col}`);
+        const corner=col==='red'?'base-tl':col==='green'?'base-tr':col==='blue'?'base-bl':'base-br';
+        if(status!=='off'){
+            activePlayers.push(col);
+            const ch=CHARS[charId],cd=COLORS[col];
+            players[col]={isIA:status==='ia',charId,icon:ch.icon,name:ch.name,skillText:ch.skillText,tokenClass:cd.css,hex:cd.hex,startOffset:cd.start,path:getPath(cd.start,HOME_PATHS[col]),tokens:[-1,-1,-1,-1],uses:2,skillActive:false,shielded:false,hasWon:false,captures:0,captured:0,skillsUsed:0};
+            baseEl.className=`base-container base-active ${corner}`;
+            document.getElementById(`base-avatar-${col}`).innerText=ch.icon;
+        }else{baseEl.className=`base-container base-inactive ${corner}`;document.getElementById(`base-avatar-${col}`).innerText='';}
+    });
+    initBoard();turnIndex=0;gameActive=true;isAnimating=false;waitingForSelection=false;rankings=[];updateUI();checkAutoPlay();
+}
+
+function initBoard(){
+    const board=document.getElementById('board');
+    Array.from(board.children).forEach(c=>{if(c.classList.contains('cell'))c.remove();});
+    for(let r=0;r<15;r++)for(let c=0;c<15;c++){
+        const cell=document.createElement('div');cell.className='cell';cell.id=`cell-${r}-${c}`;
+        if((r<6&&c<6)||(r>8&&c>8)||(r<6&&c>8)||(r>8&&c<6)||(r>=6&&r<=8&&c>=6&&c<=8))cell.classList.add('base-hidden');
+        else{
+            if(r===7&&c>=1&&c<=5)cell.classList.add('path-red');if(r===7&&c>=9&&c<=13)cell.classList.add('path-yellow');
+            if(c===7&&r>=1&&r<=5)cell.classList.add('path-green');if(c===7&&r>=9&&r<=13)cell.classList.add('path-blue');
+            if(r===6&&c===1)cell.classList.add('path-red');if(r===8&&c===13)cell.classList.add('path-yellow');
+            if(r===1&&c===8)cell.classList.add('path-green');if(r===13&&c===6)cell.classList.add('path-blue');
+        }
+        board.appendChild(cell);
+    }
+    safeSpots.forEach(idx=>{const coords=track[idx];const cell=document.getElementById(`cell-${coords[0]}-${coords[1]}`);if(cell)cell.classList.add('safe-spot');});
+    renderTokens();
+}
+
+function renderTokens(validMoves=[]){
+    document.querySelectorAll('.token').forEach(t=>t.remove());
+    const curCol=activePlayers[turnIndex];
+    activePlayers.forEach(col=>{
+        const p=players[col];
+        p.tokens.forEach((pos,idx)=>{
+            if(pos===56)return;
+            const token=document.createElement('div');token.className=`token ${p.tokenClass}`;token.id=`${col}-token-${idx}`;
+            if(waitingForSelection&&col===curCol&&validMoves.includes(idx)){token.classList.add('selectable');token.onclick=()=>selectTokenToMove(idx);}
+            if(pos===-1)document.getElementById(`pocket-${col}-${idx}`).appendChild(token);
+            else{const coords=p.path[pos];const cell=document.getElementById(`cell-${coords[0]}-${coords[1]}`);if(cell)cell.appendChild(token);}
+        });
+    });
+    ['red','green','blue','yellow'].forEach(c=>{const s=document.getElementById(`home-${c}`);if(s)s.innerHTML='';});
+    activePlayers.forEach(col=>{const w=players[col].tokens.filter(p=>p===56).length;const s=document.getElementById(`home-${col}`);if(s)for(let i=0;i<w;i++)s.innerHTML+=`<div class="token ${players[col].tokenClass}" style="position:relative;width:90%;height:90%;max-width:18px;max-height:18px;display:block;"></div>`;});
+}
+
+function triggerEpicGoal(icon,color){ASMR.play('epic');const s=document.getElementById(`home-${color}`);if(s)s.classList.add('epic-glow');for(let i=0;i<15;i++){const c=document.createElement('div');c.innerText=icon;c.className='confetti';c.style.left='50%';c.style.top='50%';c.style.setProperty('--tx',(Math.random()*400-200)+'px');c.style.setProperty('--ty',(Math.random()*400-200)+'px');document.body.appendChild(c);setTimeout(()=>c.remove(),1000);}if(s)setTimeout(()=>s.classList.remove('epic-glow'),1000);}
+function triggerSuperEpicGoal(icon,color){ASMR.play('super-epic');document.body.classList.add('shake');setTimeout(()=>document.body.classList.remove('shake'),500);const s=document.getElementById(`home-${color}`);if(s)s.classList.add('epic-glow');for(let i=0;i<40;i++){const c=document.createElement('div');c.innerText=icon;c.className='confetti';c.style.left='50%';c.style.top='50%';c.style.setProperty('--tx',(Math.random()*800-400)+'px');c.style.setProperty('--ty',(Math.random()*800-400)+'px');document.body.appendChild(c);setTimeout(()=>c.remove(),1500);}if(s)setTimeout(()=>s.classList.remove('epic-glow'),1500);}
+
+function updateUI(){
+    if(!gameActive)return;
+    const col=activePlayers[turnIndex],p=players[col];
+    document.getElementById('bottom-bar').style.borderTopColor=p.hex;
+    const av=document.getElementById('my-avatar');av.innerText=p.icon;av.style.borderColor=p.hex;av.style.boxShadow=`0 0 15px ${p.hex}`;av.style.background=p.hex;
+    const isMyTurn=col===myColor||(amIHost&&p.isIA);
+    document.getElementById('my-name').innerText=p.isIA?`IA (${p.name})`:`${col===myColor?'Tú':'Rival'} (${p.name})`;
+    const btnR=document.getElementById('btn-roll');
+    if(isAnimating||waitingForSelection||!isMyTurn||autoMode){btnR.disabled=true;btnR.style.borderColor='#444';btnR.style.boxShadow='inset 0 0 10px #000';btnR.classList.remove('dice-active');}
+    else{btnR.disabled=false;btnR.style.borderColor=p.hex;btnR.style.boxShadow=`0 0 15px ${p.hex},inset 0 0 10px ${p.hex}`;btnR.classList.add('dice-active');}
+    if(!isAnimating&&!waitingForSelection)logMessage(`Turno de ${p.name}${p.isIA?' (IA)':''}`);
+    const btnS=document.getElementById('btn-skill');document.getElementById('skill-uses').innerText=`Usos: ${p.uses}`;btnS.innerText=p.skillText;btnS.style.background='#222';
+    const canS=!isAnimating&&!waitingForSelection&&p.uses>0&&!p.skillActive&&!p.shielded&&isMyTurn&&!autoMode;btnS.disabled=!canS;
+    if(p.skillActive||p.shielded){btnS.classList.add('skill-active');btnS.style.background=p.hex;}else btnS.classList.remove('skill-active');
+}
+
+function toggleAutoMode(){autoMode=document.getElementById('auto-mode').checked;updateUI();checkAutoPlay();}
+function checkAutoPlay(){if(!gameActive||isAnimating)return;const col=activePlayers[turnIndex];const p=players[col];const isMyTurn=col===myColor||(amIHost&&p.isIA);if((p.isIA||autoMode)&&isMyTurn){if(waitingForSelection)aiChooseMove(getValidMoves(p,currentDice,col),currentDice);else setTimeout(aiLogic,600);}}
+
+function activateSkill(){ASMR.init();ASMR.play('skill');const col=activePlayers[turnIndex];const p=players[col];if(p.uses<=0)return;p.uses--;p.skillsUsed++;if(p.charId==='cat'||p.charId==='frog'||p.charId==='dog'){p.skillActive=true;logMessage(`¡${p.name} activó su habilidad!`);}else if(p.charId==='sq'){p.shielded=true;logMessage(`¡${p.name} activó Escudo!`);renderTokens();}emitSkill(col);updateUI();}
+
+function isEnemyBlockade(myCol,gi){for(let col of activePlayers){if(col===myCol)continue;let n=0;players[col].tokens.forEach(pos=>{if(pos>=0&&pos<=50&&(players[col].startOffset+pos)%52===gi)n++;});if(n>=2)return true;}return false;}
+function getValidMoves(player,dice,playerKey){let moves=[],steps=dice;if(player.charId==='cat'&&player.skillActive)steps+=2;if(player.charId==='frog'&&player.skillActive)steps*=2;player.tokens.forEach((pos,idx)=>{if(pos===-1){if(dice===6)moves.push(idx);}else if(pos>=0&&pos+steps<=56){let blocked=false;for(let s=1;s<=steps;s++){const cp=pos+s;if(cp<=50){const gi=(player.startOffset+cp)%52;if(isEnemyBlockade(playerKey,gi)){blocked=true;break;}}}if(!blocked)moves.push(idx);}});return moves;}
+
+function startTurn(){ASMR.init();if(!gameActive||isAnimating||waitingForSelection)return;isAnimating=true;updateUI();const p=players[activePlayers[turnIndex]];const dEl=document.getElementById('btn-roll');let rolls=0;const iv=setInterval(()=>{dEl.innerText=Math.floor(Math.random()*6)+1;if(rolls%2===0)ASMR.play('roll');rolls++;if(rolls>10){clearInterval(iv);let fd=Math.floor(Math.random()*6)+1;if(p.charId==='dog'&&p.skillActive){fd=6;p.skillActive=false;logMessage('¡El Perro asegura un 6!');}dEl.innerText=fd;currentDice=fd;emitRoll(fd);setTimeout(()=>evaluateMoves(fd),200);}},40);}
+
+function evaluateMoves(dice){const p=players[activePlayers[turnIndex]];const valid=getValidMoves(p,dice,activePlayers[turnIndex]);if(valid.length===0){logMessage(`Sacaste ${dice}. Sin movimientos.`);p.skillActive=false;setTimeout(()=>finishTurn(dice,false),1500);}else{let steps=dice;if(p.charId==='cat'&&p.skillActive)steps+=2;if(p.charId==='frog'&&p.skillActive)steps*=2;p.skillActive=false;if(valid.length===1&&!p.isIA&&!autoMode)executeMovement(valid[0],steps);else if(p.isIA||autoMode)setTimeout(()=>aiChooseMove(valid,steps),600);else{waitingForSelection=true;logMessage('Toca una ficha iluminada.');renderTokens(valid);updateUI();}}}
+
+function selectTokenToMove(idx){if(!waitingForSelection)return;waitingForSelection=false;renderTokens();const p=players[activePlayers[turnIndex]];let steps=currentDice;if(p.skillActive){if(p.charId==='cat')steps+=2;if(p.charId==='frog')steps*=2;p.skillActive=false;}executeMovement(idx,steps);}
+
+function executeMovement(tokenIndex,steps){isAnimating=true;emitMove(tokenIndex,steps);const col=activePlayers[turnIndex];const p=players[col];if(p.tokens[tokenIndex]===-1){p.tokens[tokenIndex]=0;ASMR.play('hop');renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),300);}else{let done=0;const iv=setInterval(()=>{if(done<steps){p.tokens[tokenIndex]++;ASMR.play('hop');renderTokens();const el=document.getElementById(`${col}-token-${tokenIndex}`);if(el)el.classList.add('hopping');done++;}else{clearInterval(iv);renderTokens();setTimeout(()=>checkCollisionsAndFinish(currentDice,tokenIndex),200);}},150);}}
+
+function checkCollisionsAndFinish(dice,tokenIndex){const col=activePlayers[turnIndex];const p=players[col];const myPos=p.tokens[tokenIndex];let scored=false;if(myPos===56){scored=true;if(p.tokens.every(x=>x===56)){triggerSuperEpicGoal(p.icon,col);p.hasWon=true;rankings.push(col);logMessage(`🏆 ¡${p.name.toUpperCase()} LLEGÓ A LA META!`);const medal=rankings.length===1?'🥇':rankings.length===2?'🥈':'🥉';const av=document.getElementById(`base-avatar-${col}`);if(av)av.innerText=p.icon+' '+medal;}else{triggerEpicGoal(p.icon,col);logMessage(`🎉 ¡${p.name} metió una ficha!`);}}else if(myPos>=0&&myPos<=50){const gi=(p.startOffset+myPos)%52;if(!safeSpots.includes(gi)){const mc=p.path[myPos];activePlayers.forEach(ec=>{if(ec!==col){const en=players[ec];en.tokens.forEach((ep,ei)=>{if(ep>=0&&ep<=50&&(en.startOffset+ep)%52===gi){const cell=document.getElementById(`cell-${mc[0]}-${mc[1]}`);if(cell){cell.classList.add('clash-anim');setTimeout(()=>cell.classList.remove('clash-anim'),300);}if(en.shielded){en.shielded=false;p.tokens[tokenIndex]=-1;p.captured++;ASMR.play(en.charId);logMessage(`🛡️ ¡${en.name} usó escudo!`);}else{en.tokens[ei]=-1;en.captured++;p.captures++;ASMR.play(p.charId);logMessage(`💥 ¡${p.name} captura a ${en.name}!`);}renderTokens();}});}}); }}
+const rem=activePlayers.filter(c=>!players[c].hasWon);if(rem.length<=1&&activePlayers.length>1){if(rem.length===1){players[rem[0]].hasWon=true;rankings.push(rem[0]);}gameActive=false;isAnimating=false;updateUI();logMessage('🏆 FIN DEL JUEGO 🏆');setTimeout(showRankingModal,1500);return;}finishTurn(dice,scored);}
+
+function showRankingModal(){const list=document.getElementById('ranking-list');const ins=document.getElementById('insights-list');list.innerHTML='';ins.innerHTML='<h3 style="margin:0 0 5px 0;color:var(--c-blue);text-align:center;">📊 Insights</h3>';const medals=['🥇 1er Lugar','🥈 2do Lugar','🥉 3er Lugar','😔 4to Lugar'];rankings.forEach((col,i)=>{const p=players[col];list.innerHTML+=`<div class="rank-item" style="color:${p.hex};border-left:5px solid ${p.hex};"><span>${medals[i]}</span><span>${p.icon} ${p.name}</span></div>`;});let agg={name:'Nadie',val:0},vic={name:'Nadie',val:0},tac={name:'Nadie',val:0};activePlayers.forEach(col=>{const p=players[col];if(p.captures>agg.val)agg={name:`${p.icon} ${p.name}`,val:p.captures};if(p.captured>vic.val)vic={name:`${p.icon} ${p.name}`,val:p.captured};if(p.skillsUsed>tac.val)tac={name:`${p.icon} ${p.name}`,val:p.skillsUsed};});ins.innerHTML+=`<div style="color:#ff4757;">⚔️ <b>Depredador:</b> ${agg.name} (${agg.val} capturas)</div><div style="color:#2ed573;">🎯 <b>Estratega:</b> ${tac.name} (${tac.val} hab.)</div><div style="color:#a4b0be;">🤕 <b>Víctima:</b> ${vic.name} (${vic.val} veces)</div>`;document.getElementById('ranking-modal').style.display='flex';}
+
+function finishTurn(dice,scored){const p=players[activePlayers[turnIndex]];if((dice===6||scored)&&!p.hasWon){logMessage(scored?'¡TURNO EXTRA por meta!':'¡Sacaste 6! TURNO EXTRA.');isAnimating=false;updateUI();checkAutoPlay();return;}p.shielded=false;do{turnIndex=(turnIndex+1)%activePlayers.length;}while(players[activePlayers[turnIndex]].hasWon);isAnimating=false;updateUI();checkAutoPlay();}
+
+function aiLogic(){if(!gameActive||isAnimating||waitingForSelection)return;const p=players[activePlayers[turnIndex]];if(p.uses>0&&Math.random()>0.6){if(p.charId==='dog'&&p.tokens.includes(-1))activateSkill();else if(p.charId==='frog'||p.charId==='cat')activateSkill();else if(p.charId==='sq'&&p.tokens.some(x=>x>0&&x<51))activateSkill();}startTurn();}
+function aiChooseMove(valid,steps){waitingForSelection=false;const p=players[activePlayers[turnIndex]];const goal=valid.filter(i=>p.tokens[i]+steps===56);if(goal.length>0){executeMovement(goal[0],steps);return;}const base=valid.filter(i=>p.tokens[i]===-1);if(base.length>0){executeMovement(base[0],steps);return;}let best=valid[0],maxP=p.tokens[valid[0]];for(const i of valid){if(p.tokens[i]>maxP){maxP=p.tokens[i];best=i;}}executeMovement(best,steps);}
+</script>
+</body>
+</html>
