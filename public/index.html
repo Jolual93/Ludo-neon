@@ -164,11 +164,17 @@ const urlParams = new URLSearchParams(window.location.search);
 let myRoomId = urlParams.get('sala') || Math.random().toString(36).substr(2,6).toUpperCase();
 if (!urlParams.get('sala')) window.history.replaceState({},'',`?sala=${myRoomId}`);
 let amIHost = false, myColor = null;
-document.getElementById('display-room-code').innerText = myRoomId;
+// Guardar color en localStorage para poder reconectarse
+const STORAGE_KEY = 'ludo_color_' + myRoomId;
+const savedColor = localStorage.getItem(STORAGE_KEY);
 
+document.getElementById('display-room-code').innerText = myRoomId;
 function copyRoomLink(){navigator.clipboard.writeText(window.location.href);logMessage('¡Enlace copiado!');}
 
-socket.on('connect', () => { socket.emit('join_room', {roomId: myRoomId}); });
+// Al conectar o reconectar, mandamos el color guardado si lo tenemos
+socket.on('connect', () => {
+    socket.emit('join_room', { roomId: myRoomId, rejoinColor: savedColor });
+});
 
 socket.on('room_joined', ({isHost, playerCount}) => {
     amIHost = isHost;
@@ -193,10 +199,66 @@ function hostStartGame(){
     socket.emit('host_start', {roomId:myRoomId, config});
 }
 
-socket.on('game_start', ({config, yourColor}) => {
+socket.on('game_start', ({config, yourColor, isRejoin}) => {
     myColor = yourColor;
+    // Guardar color para reconexión futura
+    if (yourColor) localStorage.setItem(STORAGE_KEY, yourColor);
     document.getElementById('setup-modal').style.display = 'none';
-    applyConfig(config);
+    if (!isRejoin || !gameActive) {
+        applyConfig(config);
+    } else {
+        logMessage('¡Reconectado! Retomando partida...');
+        // Si era mi turno y era IA, desactivar IA para ese color
+        if (players[myColor]) players[myColor].isIA = false;
+        updateUI(); checkAutoPlay();
+    }
+});
+
+// Sincronizar estado completo al reconectarse
+socket.on('state_sync', (state) => {
+    if (!gameActive || !state) return;
+    // Restaurar posiciones de fichas
+    activePlayers.forEach(col => {
+        if (state.tokens && state.tokens[col]) {
+            players[col].tokens = state.tokens[col];
+        }
+    });
+    if (state.turnIndex !== undefined) turnIndex = state.turnIndex;
+    renderTokens(); updateUI();
+    logMessage('Estado sincronizado ✅');
+});
+
+// Alguien se desconectó — countdown y luego IA toma el control
+socket.on('player_disconnected', ({color, seconds}) => {
+    if (!color) return;
+    logMessage(`⚠️ ${color} se desconectó. ${seconds}s para volver...`);
+    let countdown = seconds;
+    const timer = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+            logMessage(`⚠️ ${color} desconectado. Vuelve en ${countdown}s o la IA toma el control`);
+        } else {
+            clearInterval(timer);
+        }
+    }, 1000);
+});
+
+// El jugador no volvió — IA toma su lugar
+socket.on('player_abandoned', ({color}) => {
+    if (!color || !players[color]) return;
+    players[color].isIA = true;
+    logMessage(`🤖 ${players[color].name} (${color}) ahora es controlado por la IA`);
+    // Si era su turno, la IA arranca
+    checkAutoPlay();
+});
+
+// Alguien se reconectó — quitar control de IA
+socket.on('player_reconnected', ({color}) => {
+    if (!color || !players[color]) return;
+    if (color !== myColor) {
+        players[color].isIA = false;
+        logMessage(`✅ ${players[color].name} volvió a conectarse`);
+    }
 });
 
 socket.on('opponent_rolled', ({color, result}) => {
@@ -204,13 +266,22 @@ socket.on('opponent_rolled', ({color, result}) => {
         currentDice = result;
         isAnimating = true;
         document.getElementById('btn-roll').innerText = result;
-        // fromServer=true so evaluateMoves won't ask for input, just waits for opponent_moved
         setTimeout(()=>evaluateMoves(result, true), 400);
     }
 });
 socket.on('opponent_moved', ({tokenIndex, steps, color}) => { if(color!==myColor) executeMovement(tokenIndex, steps, true); });
 socket.on('opponent_skill', ({color}) => { if(color!==myColor&&players[color]){const p=players[color];if(p.uses>0){p.uses--;p.skillActive=true;}} });
-socket.on('player_disconnected', () => { logMessage('⚠️ Un jugador se desconectó'); });
+
+// Enviar estado periódicamente (solo el host)
+setInterval(() => {
+    if (!gameActive || !amIHost || !myRoomId) return;
+    const state = {
+        tokens: {},
+        turnIndex
+    };
+    activePlayers.forEach(col => { state.tokens[col] = players[col].tokens; });
+    socket.emit('sync_state', { roomId: myRoomId, gameState: state });
+}, 5000);
 
 function emitRoll(r){ socket.emit('roll_dice',{roomId:myRoomId,result:r}); }
 function emitMove(i,s){ socket.emit('move_token',{roomId:myRoomId,tokenIndex:i,steps:s,color:myColor}); }
