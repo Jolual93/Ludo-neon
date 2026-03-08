@@ -13,11 +13,18 @@ const io = new Server(server, {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ──────────────────────────────────────────
+//  SALAS
+// ──────────────────────────────────────────
 const rooms = {};
 
-function getOrCreateRoom(roomId) {
+function getRoom(roomId) {
   if (!rooms[roomId]) {
-    rooms[roomId] = { players: {}, started: false };
+    rooms[roomId] = {
+      sockets: [],   // lista de socket.id en orden de llegada
+      started: false,
+      config: null
+    };
   }
   return rooms[roomId];
 }
@@ -25,81 +32,112 @@ function getOrCreateRoom(roomId) {
 io.on('connection', (socket) => {
   console.log('Conectado:', socket.id);
 
-  socket.on('join_room', ({ roomId, playerName, color }) => {
-    const room = getOrCreateRoom(roomId);
-    const takenColors = Object.values(room.players).map(p => p.color);
-    if (takenColors.includes(color)) {
-      socket.emit('join_error', `El color ${color} ya está ocupado.`);
-      return;
-    }
+  // ── Unirse a sala ──
+  socket.on('join_room', ({ roomId }) => {
+    const room = getRoom(roomId);
     socket.join(roomId);
     socket.roomId = roomId;
-    socket.playerColor = color;
-    room.players[socket.id] = { color, name: playerName, ready: false };
-    io.to(roomId).emit('room_update', {
-      players: Object.values(room.players),
-      started: room.started
-    });
-  });
 
-  socket.on('player_ready', () => {
-    const room = rooms[socket.roomId];
-    if (!room || !room.players[socket.id]) return;
-    room.players[socket.id].ready = true;
-    const allReady = Object.values(room.players).every(p => p.ready);
-    const playerCount = Object.keys(room.players).length;
-    io.to(socket.roomId).emit('room_update', {
-      players: Object.values(room.players),
-      started: room.started
-    });
-    if (allReady && playerCount >= 2) {
-      room.started = true;
-      const colorList = Object.values(room.players).map(p => p.color);
-      io.to(socket.roomId).emit('game_start', { colors: colorList });
+    if (!room.sockets.includes(socket.id)) {
+      room.sockets.push(socket.id);
     }
+
+    const isHost = room.sockets[0] === socket.id;
+    socket.isHost = isHost;
+
+    // Si el juego ya empezó y alguien se reconecta, enviarle la config
+    if (room.started && room.config) {
+      const position = room.sockets.indexOf(socket.id);
+      const yourColor = assignColor(room.config, position);
+      socket.emit('game_start', { config: room.config, yourColor });
+    } else {
+      socket.emit('room_joined', {
+        isHost,
+        playerCount: room.sockets.length
+      });
+      // Notificar a todos el nuevo conteo
+      io.to(roomId).emit('room_update', {
+        playerCount: room.sockets.length
+      });
+    }
+
+    console.log(`Socket ${socket.id} unido a sala ${roomId} (host: ${isHost})`);
   });
 
+  // ── Anfitrión inicia la partida ──
+  socket.on('host_start', ({ roomId, config }) => {
+    const room = rooms[roomId];
+    if (!room || room.sockets[0] !== socket.id) return; // solo el host
+
+    room.started = true;
+    room.config = config;
+
+    // Enviar a cada jugador su color asignado
+    room.sockets.forEach((sid, index) => {
+      const yourColor = assignColor(config, index);
+      io.to(sid).emit('game_start', { config, yourColor });
+    });
+
+    console.log(`Partida iniciada en sala ${roomId}`);
+  });
+
+  // ── Dado ──
   socket.on('roll_dice', ({ roomId, result }) => {
-    socket.to(roomId).emit('opponent_rolled', { color: socket.playerColor, result });
+    socket.to(roomId).emit('opponent_rolled', {
+      color: getPlayerColor(roomId, socket.id),
+      result
+    });
   });
 
+  // ── Movimiento ──
   socket.on('move_token', ({ roomId, tokenIndex, steps, color }) => {
     socket.to(roomId).emit('opponent_moved', { tokenIndex, steps, color });
   });
 
+  // ── Habilidad ──
   socket.on('use_skill', ({ roomId, color }) => {
     socket.to(roomId).emit('opponent_skill', { color });
   });
 
-  socket.on('sync_state', ({ roomId, gameState }) => {
-    if (rooms[roomId]) {
-      rooms[roomId].gameState = gameState;
-      socket.to(roomId).emit('state_synced', gameState);
-    }
-  });
-
-  socket.on('chat_msg', ({ roomId, name, text }) => {
-    io.to(roomId).emit('chat_msg', { name, text });
-  });
-
+  // ── Desconexión ──
   socket.on('disconnect', () => {
     const room = rooms[socket.roomId];
     if (room) {
-      const playerName = room.players[socket.id]?.name || 'Alguien';
-      delete room.players[socket.id];
-      io.to(socket.roomId).emit('player_disconnected', {
-        name: playerName,
-        players: Object.values(room.players)
-      });
-      if (Object.keys(room.players).length === 0) {
+      room.sockets = room.sockets.filter(id => id !== socket.id);
+      io.to(socket.roomId).emit('player_disconnected', { name: 'Un jugador' });
+      io.to(socket.roomId).emit('room_update', { playerCount: room.sockets.length });
+      if (room.sockets.length === 0) {
         delete rooms[socket.roomId];
+        console.log(`Sala ${socket.roomId} eliminada`);
       }
     }
     console.log('Desconectado:', socket.id);
   });
 });
 
+// ──────────────────────────────────────────
+//  HELPERS
+// ──────────────────────────────────────────
+
+// Asigna un color humano según el orden de llegada del jugador
+function assignColor(config, playerIndex) {
+  const humanColors = Object.entries(config)
+    .filter(([, v]) => v.status === 'human')
+    .map(([col]) => col);
+  return humanColors[playerIndex] || null;
+}
+
+function getPlayerColor(roomId, socketId) {
+  const room = rooms[roomId];
+  if (!room || !room.config) return null;
+  const index = room.sockets.indexOf(socketId);
+  return assignColor(room.config, index);
+}
+
+// ──────────────────────────────────────────
+//  ARRANCAR
+// ──────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log(`Servidor Ludo corriendo en puerto ${PORT}`);
 });
